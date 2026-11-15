@@ -1,4 +1,4 @@
-import { db } from "@/lib/db";
+import { one } from "@/lib/db";
 import { verifyPassword, startSession, publicUser, currentUser } from "@/lib/auth";
 import { clientIp, rateLimited } from "@/lib/ratelimit";
 import { badRequestOrigin } from "@/lib/guard";
@@ -17,11 +17,13 @@ export async function POST(request: Request) {
   }
 
   // per network AND per account, so changing IPs doesn't allow guessing one account's password
-  const ipLimited = rateLimited("login-ip:" + clientIp(request), 20, 900_000);
-  const acctLimited = rateLimited("login-acct:" + email, 10, 900_000);
+  const [ipLimited, acctLimited] = await Promise.all([
+    rateLimited("login-ip:" + clientIp(request), 20, 900_000),
+    rateLimited("login-acct:" + email, 10, 900_000),
+  ]);
   if (ipLimited || acctLimited) return Response.json({ error: "limit" }, { status: 429 });
 
-  const row = db().prepare("SELECT id, pass FROM users WHERE email=?").get(email) as { id: number; pass: string } | undefined;
+  const row = await one<{ id: number; pass: string }>("SELECT id, pass FROM users WHERE email=?", email);
   // always runs the hash check (against a dummy when the email is unknown) so timing doesn't reveal accounts
   const ok = await verifyPassword(password, row?.pass ?? null);
   if (!row || !ok) return Response.json({ error: "invalid" }, { status: 401 });

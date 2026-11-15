@@ -1,6 +1,6 @@
 import { cleanCareer, demoCareers, type Career } from "@/lib/careers";
 import { currentUser, isSubscribed } from "@/lib/auth";
-import { db, trimHistory } from "@/lib/db";
+import { run, trimHistory } from "@/lib/db";
 import { clientIp, rateLimited } from "@/lib/ratelimit";
 import { badRequestOrigin } from "@/lib/guard";
 import { LANGS, type Lang } from "@/lib/i18n";
@@ -82,7 +82,7 @@ export async function POST(request: Request) {
   const subscribed = isSubscribed(user);
   // free visitors: 10/hour per IP; subscribers: 60/hour per account
   const key = subscribed ? `u:${user!.id}` : `ip:${clientIp(request)}`;
-  if (rateLimited("careers:" + key, subscribed ? 60 : 10, 3600_000)) return Response.json({ error: "limit" }, { status: 429 });
+  if (await rateLimited("careers:" + key, subscribed ? 60 : 10, 3600_000)) return Response.json({ error: "limit" }, { status: 429 });
 
   let text = "";
   let lang: Lang = "en";
@@ -111,9 +111,8 @@ export async function POST(request: Request) {
   if (subscribed) {
     // only real AI results are saved; sample ideas are not
     if (source === "ai") {
-      db().prepare("INSERT INTO searches(user_id,text,result,created_at) VALUES(?,?,?,?)")
-        .run(user!.id, text, JSON.stringify(careers), Date.now());
-      trimHistory(user!.id);
+      await run("INSERT INTO searches(user_id,text,result,created_at) VALUES(?,?,?,?)", user!.id, text, JSON.stringify(careers), Date.now());
+      await trimHistory(user!.id);
     }
     return Response.json({ careers, source, full: true });
   }

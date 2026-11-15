@@ -1,4 +1,4 @@
-import { db } from "@/lib/db";
+import { isUniqueViolation, one } from "@/lib/db";
 import { hashPassword, startSession, publicUser, currentUser } from "@/lib/auth";
 import { clientIp, rateLimited } from "@/lib/ratelimit";
 import { badRequestOrigin } from "@/lib/guard";
@@ -6,7 +6,7 @@ import { badRequestOrigin } from "@/lib/guard";
 export async function POST(request: Request) {
   const bad = badRequestOrigin(request);
   if (bad) return bad;
-  if (rateLimited("signup:" + clientIp(request), 10, 3600_000)) return Response.json({ error: "limit" }, { status: 429 });
+  if (await rateLimited("signup:" + clientIp(request), 10, 3600_000)) return Response.json({ error: "limit" }, { status: 429 });
 
   let email = "", password = "";
   try {
@@ -21,12 +21,15 @@ export async function POST(request: Request) {
 
   let userId: number;
   try {
-    const r = db()
-      .prepare("INSERT INTO users(email,pass,created_at) VALUES(?,?,?)")
-      .run(email, await hashPassword(password), Date.now());
-    userId = Number(r.lastInsertRowid);
+    const r = await one<{ id: number }>(
+      "INSERT INTO users(email,pass,created_at) VALUES(?,?,?) RETURNING id",
+      email,
+      await hashPassword(password),
+      Date.now(),
+    );
+    userId = Number(r?.id);
   } catch (e) {
-    if (String(e).includes("UNIQUE")) return Response.json({ error: "exists" }, { status: 409 });
+    if (isUniqueViolation(e)) return Response.json({ error: "exists" }, { status: 409 });
     console.error("signup error", e);
     return Response.json({ error: "server" }, { status: 500 });
   }

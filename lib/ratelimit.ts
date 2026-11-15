@@ -1,25 +1,22 @@
-// Simple in-memory rate limiter (per server process; resets on restart).
-// Swap for a shared store (e.g. Redis) if you run several servers.
-const hits = new Map<string, number[]>();
-let lastSweep = Date.now();
-const SWEEP_EVERY = 10 * 60_000;
+import { one, run } from "./db";
+
+// Rate limiter stored in the database, so it holds across every server instance (Vercel runs many).
+// If the database is unreachable it fails open, so a database hiccup never locks visitors out.
 const MAX_WINDOW = 3600_000;
 
-function sweep(now: number) {
-  if (now - lastSweep < SWEEP_EVERY) return;
-  lastSweep = now;
-  for (const [key, times] of hits) {
-    if (!times.length || now - times[times.length - 1] > MAX_WINDOW) hits.delete(key);
-  }
-}
-
-export function rateLimited(key: string, max: number, windowMs: number) {
+export async function rateLimited(key: string, max: number, windowMs: number): Promise<boolean> {
   const now = Date.now();
-  sweep(now);
-  const recent = (hits.get(key) ?? []).filter((t) => now - t < windowMs);
-  recent.push(now);
-  hits.set(key, recent);
-  return recent.length > max;
+  try {
+    // now and then, clear every old hit; otherwise only this key's
+    if (Math.random() < 0.02) await run("DELETE FROM rate_hits WHERE at < ?", now - MAX_WINDOW);
+    else await run("DELETE FROM rate_hits WHERE key = ? AND at < ?", key, now - windowMs);
+    await run("INSERT INTO rate_hits(key, at) VALUES(?, ?)", key, now);
+    const row = await one<{ n: number | string }>("SELECT COUNT(*) AS n FROM rate_hits WHERE key = ? AND at >= ?", key, now - windowMs);
+    return Number(row?.n ?? 0) > max;
+  } catch (e) {
+    console.error("rate limit check failed", e);
+    return false;
+  }
 }
 
 /**

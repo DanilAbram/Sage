@@ -1,7 +1,7 @@
 import crypto from "node:crypto";
 import { promisify } from "node:util";
 import { cookies } from "next/headers";
-import { db } from "./db";
+import { one, run } from "./db";
 
 const COOKIE = "sage_session";
 const DAYS = 30;
@@ -40,12 +40,12 @@ export async function startSession(userId: number) {
   const jar = await cookies();
   // rotate: drop any session this browser already had, and clean up expired rows
   const old = jar.get(COOKIE)?.value;
-  if (old) db().prepare("DELETE FROM sessions WHERE token_hash=?").run(sha(old));
-  db().prepare("DELETE FROM sessions WHERE expires_at < ?").run(Date.now());
+  if (old) await run("DELETE FROM sessions WHERE token_hash=?", sha(old));
+  await run("DELETE FROM sessions WHERE expires_at < ?", Date.now());
 
   const token = crypto.randomBytes(32).toString("base64url");
   const expires = Date.now() + DAYS * 86400_000;
-  db().prepare("INSERT INTO sessions(token_hash,user_id,expires_at) VALUES(?,?,?)").run(sha(token), userId, expires);
+  await run("INSERT INTO sessions(token_hash,user_id,expires_at) VALUES(?,?,?)", sha(token), userId, expires);
   jar.set(COOKIE, token, {
     httpOnly: true,
     sameSite: "lax",
@@ -58,22 +58,20 @@ export async function startSession(userId: number) {
 export async function endSession() {
   const jar = await cookies();
   const token = jar.get(COOKIE)?.value;
-  if (token) db().prepare("DELETE FROM sessions WHERE token_hash=?").run(sha(token));
+  if (token) await run("DELETE FROM sessions WHERE token_hash=?", sha(token));
   jar.delete(COOKIE);
 }
 
 export async function currentUser(): Promise<User | null> {
   const token = (await cookies()).get(COOKIE)?.value;
   if (!token) return null;
-  const row = db()
-    .prepare(
-      `SELECT u.id, u.email, u.stripe_customer, u.sub_id, u.sub_status
-       FROM sessions s JOIN users u ON u.id = s.user_id
-       WHERE s.token_hash = ? AND s.expires_at > ?`,
-    )
-    .get(sha(token), Date.now()) as
-    | { id: number; email: string; stripe_customer: string | null; sub_id: string | null; sub_status: string | null }
-    | undefined;
+  const row = await one<{ id: number; email: string; stripe_customer: string | null; sub_id: string | null; sub_status: string | null }>(
+    `SELECT u.id, u.email, u.stripe_customer, u.sub_id, u.sub_status
+     FROM sessions s JOIN users u ON u.id = s.user_id
+     WHERE s.token_hash = ? AND s.expires_at > ?`,
+    sha(token),
+    Date.now(),
+  );
   if (!row) return null;
   return {
     id: row.id,
