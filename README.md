@@ -34,3 +34,12 @@ You can check out [the Next.js GitHub repository](https://github.com/vercel/next
 The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
 
 Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+
+## Deploy on Vercel
+
+1. Import the GitHub repository in Vercel (framework: Next.js, root directory: `./`).
+2. **Storage → Neon (Postgres) → Connect.** This sets `DATABASE_URL`; tables are created on first use.
+3. **Settings → Environment Variables:** `GEMINI_API_KEY`, `STRIPE_SECRET_KEY`, `STRIPE_PRICE_MONTHLY`,
+   `STRIPE_PRICE_YEARLY`, `STRIPE_WEBHOOK_SECRET`, `NEXT_PUBLIC_CONTACT_EMAIL`, `TRUSTED_IP_HEADER=x-real-ip`.
+   Optional: `NEXT_PUBLIC_SITE_URL` (defaults to the Vercel production address), `SITE_NOINDEX=1` before launch.
+4. Deploy, then add the Stripe webhook `https://<your-site>/api/stripe/webhook` and redeploy with its secret.

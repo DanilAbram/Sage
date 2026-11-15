@@ -138,6 +138,10 @@ const g = globalThis as unknown as { __sageDriver?: Promise<Driver> };
 function driver(): Promise<Driver> {
   if (!g.__sageDriver) {
     const url = databaseUrl();
+    if (!url && process.env.VERCEL) {
+      // Vercel can't keep a database file: connect Neon (Storage tab) so DATABASE_URL is set
+      return Promise.reject(new Error("No database: add Neon Postgres in Vercel → Storage, then redeploy."));
+    }
     g.__sageDriver = (url ? makePg(url) : makeSqlite()).catch((e) => {
       g.__sageDriver = undefined; // let the next request try again
       throw e;

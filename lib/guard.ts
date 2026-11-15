@@ -16,6 +16,8 @@ export function badRequestOrigin(request: Request): Response | null {
 
 /** Base URL for links we hand to Stripe. Prefer a fixed site URL over the request's Host header. */
 export function siteOrigin(request: Request) {
-  const fixed = process.env.NEXT_PUBLIC_SITE_URL;
+  const fixed =
+    process.env.NEXT_PUBLIC_SITE_URL ||
+    (process.env.VERCEL_PROJECT_PRODUCTION_URL ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}` : "");
   return fixed ? new URL(fixed).origin : new URL(request.url).origin;
 }
